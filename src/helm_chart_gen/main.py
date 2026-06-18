@@ -3,12 +3,11 @@ import json
 import os
 import sys
 import warnings
-from pathlib import Path
 from typing import Any
 
-if "CREWAI_STORAGE_DIR" not in os.environ:
-    os.environ["CREWAI_STORAGE_DIR"] = str(Path(".crewai_storage").resolve())
+from helm_chart_gen.env_loader import load_project_env
 
+load_project_env()
 from helm_chart_gen.crew import HelmChartGen
 
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -140,10 +139,7 @@ def _reject_secret_values(inputs: dict[str, Any]) -> None:
 
 
 def _prepare_local_storage() -> None:
-    if "CREWAI_STORAGE_DIR" not in os.environ:
-        storage_dir = Path(".crewai_storage").resolve()
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        os.environ["CREWAI_STORAGE_DIR"] = str(storage_dir)
+    load_project_env()
 
 
 def _to_bool(value: Any) -> bool:

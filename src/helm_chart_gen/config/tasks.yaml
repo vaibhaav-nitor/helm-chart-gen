@@ -1,82 +1,132 @@
 repository_scan_task:
   description: >
-    Clone and scan {repository_url} at {git_ref}. If {app_subdirectory} is
-    provided, restrict analysis to that path. Use the repository clone and
-    scan tools. Identify application framework, language, build system,
-    Dockerfile details, exposed ports, health endpoints, env/config needs,
-    databases or external services, and existing Kubernetes or Helm files.
-    Do not include secret values.
+    Clone and scan the full repository from {repository_url} at {git_ref}. If
+    {app_subdirectory} is provided, scan that directory as the primary app but
+    still note related repo-level deployment assets. Use the repository clone
+    and scan tools. Identify every deployable service and collect evidence for:
+    languages, frameworks, package managers, dependency manifests, Dockerfiles,
+    docker-compose files, Maven/Gradle files, JAR/WAR packaging hints, .NET
+    project files, Node/frontend build files, exposed ports, health endpoints,
+    app settings, environment variable names, connection references, databases,
+    queues, caches, object stores, existing Kubernetes manifests, existing Helm
+    charts, and CI/CD deployment clues. Do not include secret values.
   expected_output: >
-    A structured repository scan report with detected facts, evidence paths,
-    assumptions, unresolved questions, and the checkout_path used for the scan.
+    A structured full-repository scan report containing checkout_path,
+    discovered services, evidence paths, dependency/build files, Dockerfile
+    inventory, existing Kubernetes/Helm assets, detected connections, config
+    and secret reference names, assumptions, and unresolved questions.
   agent: repository_scanner
 
 application_analysis_task:
   description: >
-    Analyze the repository scan and user inputs. Produce application
-    deployment requirements including runtime type, container port, probe
-    recommendations, non-sensitive config, secret references needed, resource
-    hints, scaling needs, ingress needs, and persistence needs. Treat
-    {container_port} as an override when it is provided.
+    Analyze the repository scan into an application topology. For each service,
+    determine the language, framework, runtime, build method, package manager,
+    Dockerfile behavior, artifact type such as JAR/WAR/static assets/container,
+    ports, health endpoints, environment variables, config files, external
+    dependencies, and connections to other services. For Java services,
+    analyze Maven/Gradle and JAR/WAR hints. For frontend services, identify
+    build output and runtime serving model. Treat {container_port} as a user
+    override only when it is provided.
   expected_output: >
-    A structured application profile ready for Kubernetes design. Separate
-    detected facts from assumptions and never include secret values.
+    A per-service application topology ready for Kubernetes design, including
+    service name, service type, runtime, build/docker findings, ports, probes,
+    config keys, secret references, external connections, persistence needs,
+    and clear separation between detected evidence and assumptions.
   agent: application_analyst
 
 kubernetes_requirements_task:
   description: >
-    Convert the application profile into AKS Kubernetes requirements. Decide
-    workload kind, Service, Ingress, probes, resources, HPA, service account,
-    pod/container security context, labels, annotations, and Azure Key Vault
-    CSI Driver requirements using {keyvault_name}, {azure_tenant_id}, and
-    {user_assigned_identity_client_id}. Use {namespace} as the target
-    namespace.
+    Convert the application topology and any existing Kubernetes assets into
+    Kubernetes requirements for each service. Preserve useful existing
+    Kubernetes intent, but correct non-dynamic or unsafe patterns. Decide
+    Deployment/StatefulSet only from evidence, Service definitions, Ingress
+    rules, probes, resource requests/limits, HPA, ConfigMaps, ServiceAccounts,
+    labels, annotations, NetworkPolicy, Azure Key Vault CSI references, and
+    image reference values. Add PV/PVC requirements only if persistence is
+    explicitly enabled by user-provided values or the service clearly requires
+    durable storage; otherwise keep persistence disabled and omit PVC
+    resources by default.
   expected_output: >
-    A complete Kubernetes requirements specification for Helm generation,
-    including safe defaults and any unresolved implementation assumptions.
+    A Kubernetes requirements specification grouped by service. Include the
+    required Helm values per service, environment-specific values that must
+    stay configurable, Key Vault/ACR/image references, optional PV/PVC toggle
+    behavior, and any existing Kubernetes assets that should be migrated into
+    Helm templates.
   agent: kubernetes_expert
 
 helm_generation_task:
   description: >
-    Generate an idiomatic Helm chart named {chart_name}. Include Chart.yaml,
-    values.yaml, templates/_helpers.tpl, deployment, service, ingress when
-    {ingress_enabled} is true, configmap, serviceaccount, SecretProviderClass
-    for Azure Key Vault CSI, and HPA when {enable_hpa} is true. Use
-    {image_repository}:{image_tag}. Never render secret values; only render
-    Key Vault object references from {secret_mappings_json}. Use the chart
-    writer tool to persist the chart and return the chart_dir.
+    Generate a dynamic Helm chart under a top-level helm/ folder inside the
+    cloned repository checkout_path from the repository scan task. The output
+    paths must be rooted under helm/ and must include Chart.yaml,
+    templates/_helpers.tpl, templates for each discovered service, and values
+    files that support per-service and per-environment overrides. Create a
+    generic values.yaml with shared defaults and service maps. Also create
+    separate environment values files such as
+    values-dev.yaml, values-test.yaml, values-stage.yaml, and values-prod.yaml,
+    or per-service environment values files when multiple services need
+    distinct overrides. ACR name, image repository, image tag, Key Vault name,
+    namespace, ingress host, secret object names, config values, resources,
+    autoscaling, and persistence settings must be values references, not
+    hardcoded templates. Use {image_repository}:{image_tag} only as default
+    values. Use {keyvault_name}, {azure_tenant_id}, and
+    {user_assigned_identity_client_id} only as overrideable values. Render
+    Azure Key Vault references from {secret_mappings_json}, never secret
+    values. Include PV/PVC templates only behind a persistence.enabled style
+    value and default it to false unless persistence is explicitly required.
+    Use the chart writer tool with repository_root set to the checkout_path
+    from repository_scan_task and write_to_repository set to true. Return
+    chart_dir, repository_root, and the written files.
   expected_output: >
-    A complete Helm chart as file path and content pairs, generation notes,
-    and the local chart_dir returned by the chart writer tool.
+    A complete Helm chart represented as file path and content pairs rooted
+    under helm/, plus generation notes and the local chart_dir returned by the
+    chart writer tool. The chart must be dynamic enough for users to add more
+    environment variables, services, image settings, ACR values, Key Vault
+    values, resources, ingress rules, and persistence settings through values
+    files without editing templates.
   agent: helm_generator
 
 security_review_task:
   description: >
-    Review the generated Helm chart for secret leakage, unsafe pod security,
-    missing resources, weak image tag practices, broad service account use,
-    ingress risk, missing probes, and AKS Key Vault CSI misuse. Mark blocking
-    issues clearly and use the secret redaction tool before finalizing output.
+    Review the generated helm/ chart for secret leakage, hardcoded environment
+    details, unsafe pod security, missing resource limits, weak image/tag
+    practices, overly broad service accounts, ingress exposure, missing probes,
+    NetworkPolicy gaps, unsafe PV/PVC defaults, and Azure Key Vault CSI misuse.
+    Verify that ACR, image repository, image tag, Key Vault name, namespace,
+    ingress host, config, and secret object references are values-driven and
+    can vary per environment. Use the secret redaction tool before finalizing
+    output.
   expected_output: >
-    A security review report with severity, finding, affected template, required
-    remediation, and blocking status.
+    A security review report with severity, affected file/template, finding,
+    remediation, blocking status, and a clear statement on whether the chart is
+    safe to use for non-production testing and what blocks production release.
   agent: security_reviewer
 
 helm_validation_task:
   description: >
     Validate the generated chart using the chart_dir from the Helm generation
-    task. Run the Helm validation tool. Summarize pass/fail status, command
-    results, schema or policy findings, and exact fixes when needed.
+    task. Run the Helm validation tool when available. Confirm that the chart
+    structure is rooted under helm/, values.yaml exists, environment values
+    files exist, service templates are values-driven, optional PV/PVC is behind
+    a disabled-by-default toggle when present, and no secret values are
+    rendered. Summarize pass/fail status, command results, schema or policy
+    findings, and exact fixes.
   expected_output: >
-    A validation report with command results, rendered manifest status,
-    schema/policy findings, final readiness status, and blockers if any.
+    A validation report with command results when available, static validation
+    findings when tools are unavailable, rendered manifest readiness,
+    per-environment values coverage, final readiness status, and blockers.
   agent: helm_validator
 
 human_approval_task:
   description: >
-    Present the repository scan summary, application profile, Kubernetes
-    requirements, generated Helm chart file list, security findings, and
-    validation results. Ask the human reviewer to approve, reject, or request
-    revision. Approval is required before treating the chart as releasable.
+    Present the final repository scan, application topology, Docker/build
+    analysis, existing Kubernetes analysis, generated helm/ chart file list,
+    values file strategy, per-service environment override model, security
+    findings, validation results, and remaining manual inputs. Ask the human
+    reviewer to approve, reject, or request revision. Approval is required
+    before treating the chart as releasable.
   expected_output: >
-    A final human approval decision and concise release summary.
+    A final human approval decision with a concise release summary, chart
+    location, generated values files, required user edits before deployment,
+    known assumptions, and any revision requests.
   agent: human_approval_coordinator

@@ -141,6 +141,14 @@ class SecretRedactionTool(BaseTool):
 
 class HelmChartWriterInput(BaseModel):
     chart_name: str = Field(..., description="Name of the Helm chart output directory.")
+    repository_root: str = Field(
+        "",
+        description="Optional local repository checkout path. When provided with write_to_repository=true, writes under repository_root/helm.",
+    )
+    write_to_repository: bool = Field(
+        False,
+        description="When true, write the chart under repository_root/helm instead of generated_charts/chart_name.",
+    )
     chart_files_json: str = Field(
         ...,
         description="JSON object or list containing file paths and content for the generated Helm chart.",
@@ -150,16 +158,38 @@ class HelmChartWriterInput(BaseModel):
 class HelmChartWriterTool(BaseTool):
     name: str = "helm_chart_writer_tool"
     description: str = (
-        "Writes generated Helm chart files to the local output directory. "
+        "Writes generated Helm chart files. By default it writes to generated_charts/chart_name. "
+        "When repository_root and write_to_repository=true are provided, it writes safely under repository_root/helm. "
         "Input must be JSON path/content pairs."
     )
     args_schema: Type[BaseModel] = HelmChartWriterInput
 
-    def _run(self, chart_name: str, chart_files_json: str) -> str:
+    def _run(
+        self,
+        chart_name: str,
+        chart_files_json: str,
+        repository_root: str = "",
+        write_to_repository: bool = False,
+    ) -> str:
         safe_chart_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", chart_name).strip("-") or "generated-chart"
-        chart_dir = (OUTPUT_DIR / safe_chart_name).resolve()
-        if OUTPUT_DIR not in chart_dir.parents and chart_dir != OUTPUT_DIR:
-            return json.dumps({"status": "error", "message": "Invalid chart output path."})
+        if write_to_repository:
+            if not repository_root:
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "message": "repository_root is required when write_to_repository is true.",
+                    }
+                )
+            repo_root = Path(repository_root).resolve()
+            if not repo_root.exists() or not repo_root.is_dir():
+                return json.dumps({"status": "error", "message": f"Repository root not found: {repo_root}"})
+            chart_dir = (repo_root / "helm").resolve()
+            allowed_root = chart_dir
+        else:
+            chart_dir = (OUTPUT_DIR / safe_chart_name).resolve()
+            allowed_root = chart_dir
+            if OUTPUT_DIR not in chart_dir.parents and chart_dir != OUTPUT_DIR:
+                return json.dumps({"status": "error", "message": "Invalid chart output path."})
 
         try:
             parsed = json.loads(chart_files_json)
@@ -173,14 +203,24 @@ class HelmChartWriterTool(BaseTool):
         chart_dir.mkdir(parents=True, exist_ok=True)
         written: list[str] = []
         for relative_path, content in files.items():
-            destination = (chart_dir / relative_path).resolve()
-            if chart_dir not in destination.parents:
+            normalized_path = _normalize_helm_relative_path(relative_path)
+            destination = (chart_dir / normalized_path).resolve()
+            if allowed_root not in destination.parents:
                 return json.dumps({"status": "error", "message": f"Unsafe chart path: {relative_path}"})
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(_redact(str(content)), encoding="utf-8")
             written.append(str(destination.relative_to(chart_dir)))
 
-        return json.dumps({"status": "ok", "chart_dir": str(chart_dir), "files": sorted(written)}, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "chart_dir": str(chart_dir),
+                "write_target": "repository" if write_to_repository else "generated_charts",
+                "repository_root": str(Path(repository_root).resolve()) if repository_root else "",
+                "files": sorted(written),
+            },
+            indent=2,
+        )
 
 
 class HelmValidationInput(BaseModel):
@@ -322,6 +362,19 @@ def _normalize_chart_files(parsed: Any) -> dict[str, str]:
                     normalized[str(path)] = str(content)
         return normalized
     return {}
+
+
+def _normalize_helm_relative_path(relative_path: str) -> str:
+    safe_parts = []
+    for part in Path(relative_path.replace("\\", "/")).parts:
+        if part in {"", ".", "/"}:
+            continue
+        if part == "..":
+            continue
+        safe_parts.append(part)
+    if safe_parts and safe_parts[0].lower() == "helm":
+        safe_parts = safe_parts[1:]
+    return str(Path(*safe_parts)) if safe_parts else "Chart.yaml"
 
 
 def _redact_obj(value: Any) -> Any:

@@ -1,3 +1,9 @@
+import os
+
+from helm_chart_gen.env_loader import load_project_env
+
+load_project_env()
+
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
@@ -18,11 +24,16 @@ class HelmChartGen:
     agents: list[BaseAgent]
     tasks: list[Task]
 
+    @property
+    def llm_model(self) -> str:
+        return os.getenv("MODEL", "gpt-5-mini")
+
     @agent
     def repository_scanner(self) -> Agent:
         return Agent(
             config=self.agents_config["repository_scanner"],  # type: ignore[index]
             tools=[RepositoryCloneTool(), RepositoryScanTool(), SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -31,6 +42,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["application_analyst"],  # type: ignore[index]
             tools=[SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -39,6 +51,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["kubernetes_expert"],  # type: ignore[index]
             tools=[SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -47,6 +60,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["helm_generator"],  # type: ignore[index]
             tools=[HelmChartWriterTool(), SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -55,6 +69,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["security_reviewer"],  # type: ignore[index]
             tools=[SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -63,6 +78,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["helm_validator"],  # type: ignore[index]
             tools=[HelmValidationTool(), SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 
@@ -71,6 +87,7 @@ class HelmChartGen:
         return Agent(
             config=self.agents_config["human_approval_coordinator"],  # type: ignore[index]
             tools=[SecretRedactionTool()],
+            llm=self.llm_model,
             verbose=True,
         )
 

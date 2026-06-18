@@ -3,6 +3,7 @@
 .helm_gen_workspace/
 generated_charts/
 output/
+tmp*/
 .env
 .venv/
 __pycache__/
