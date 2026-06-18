@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # HelmChartGen Crew
 
 CrewAI automation for generating AKS-ready Helm charts from a Git repository scan.
@@ -105,3 +106,6 @@ Temporary cloned repositories are stored under:
 ```text
 .helm_gen_workspace/
 ```
+=======
+# helm-chart-gen
+>>>>>>> 0ce22d2e37bb22a3de873bf70d73c77b0635e538
