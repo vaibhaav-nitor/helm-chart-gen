@@ -1,0 +1,82 @@
+repository_scan_task:
+  description: >
+    Clone and scan {repository_url} at {git_ref}. If {app_subdirectory} is
+    provided, restrict analysis to that path. Use the repository clone and
+    scan tools. Identify application framework, language, build system,
+    Dockerfile details, exposed ports, health endpoints, env/config needs,
+    databases or external services, and existing Kubernetes or Helm files.
+    Do not include secret values.
+  expected_output: >
+    A structured repository scan report with detected facts, evidence paths,
+    assumptions, unresolved questions, and the checkout_path used for the scan.
+  agent: repository_scanner
+
+application_analysis_task:
+  description: >
+    Analyze the repository scan and user inputs. Produce application
+    deployment requirements including runtime type, container port, probe
+    recommendations, non-sensitive config, secret references needed, resource
+    hints, scaling needs, ingress needs, and persistence needs. Treat
+    {container_port} as an override when it is provided.
+  expected_output: >
+    A structured application profile ready for Kubernetes design. Separate
+    detected facts from assumptions and never include secret values.
+  agent: application_analyst
+
+kubernetes_requirements_task:
+  description: >
+    Convert the application profile into AKS Kubernetes requirements. Decide
+    workload kind, Service, Ingress, probes, resources, HPA, service account,
+    pod/container security context, labels, annotations, and Azure Key Vault
+    CSI Driver requirements using {keyvault_name}, {azure_tenant_id}, and
+    {user_assigned_identity_client_id}. Use {namespace} as the target
+    namespace.
+  expected_output: >
+    A complete Kubernetes requirements specification for Helm generation,
+    including safe defaults and any unresolved implementation assumptions.
+  agent: kubernetes_expert
+
+helm_generation_task:
+  description: >
+    Generate an idiomatic Helm chart named {chart_name}. Include Chart.yaml,
+    values.yaml, templates/_helpers.tpl, deployment, service, ingress when
+    {ingress_enabled} is true, configmap, serviceaccount, SecretProviderClass
+    for Azure Key Vault CSI, and HPA when {enable_hpa} is true. Use
+    {image_repository}:{image_tag}. Never render secret values; only render
+    Key Vault object references from {secret_mappings_json}. Use the chart
+    writer tool to persist the chart and return the chart_dir.
+  expected_output: >
+    A complete Helm chart as file path and content pairs, generation notes,
+    and the local chart_dir returned by the chart writer tool.
+  agent: helm_generator
+
+security_review_task:
+  description: >
+    Review the generated Helm chart for secret leakage, unsafe pod security,
+    missing resources, weak image tag practices, broad service account use,
+    ingress risk, missing probes, and AKS Key Vault CSI misuse. Mark blocking
+    issues clearly and use the secret redaction tool before finalizing output.
+  expected_output: >
+    A security review report with severity, finding, affected template, required
+    remediation, and blocking status.
+  agent: security_reviewer
+
+helm_validation_task:
+  description: >
+    Validate the generated chart using the chart_dir from the Helm generation
+    task. Run the Helm validation tool. Summarize pass/fail status, command
+    results, schema or policy findings, and exact fixes when needed.
+  expected_output: >
+    A validation report with command results, rendered manifest status,
+    schema/policy findings, final readiness status, and blockers if any.
+  agent: helm_validator
+
+human_approval_task:
+  description: >
+    Present the repository scan summary, application profile, Kubernetes
+    requirements, generated Helm chart file list, security findings, and
+    validation results. Ask the human reviewer to approve, reject, or request
+    revision. Approval is required before treating the chart as releasable.
+  expected_output: >
+    A final human approval decision and concise release summary.
+  agent: human_approval_coordinator

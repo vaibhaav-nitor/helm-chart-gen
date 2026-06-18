@@ -1,0 +1,24 @@
+[project]
+name = "helm_chart_gen"
+version = "0.1.0"
+description = "helm_chart_gen using crewAI"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai[tools]==1.14.7"
+]
+
+[project.scripts]
+helm_chart_gen = "helm_chart_gen.main:run"
+run_crew = "helm_chart_gen.main:run"
+train = "helm_chart_gen.main:train"
+replay = "helm_chart_gen.main:replay"
+test = "helm_chart_gen.main:test"
+run_with_trigger = "helm_chart_gen.main:run_with_trigger"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.crewai]
+type = "crew"

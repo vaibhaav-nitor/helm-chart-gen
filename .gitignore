@@ -1,0 +1,8 @@
+.crewai_storage/
+.helm_gen_workspace/
+generated_charts/
+output/
+.env
+.venv/
+__pycache__/
+*.pyc
